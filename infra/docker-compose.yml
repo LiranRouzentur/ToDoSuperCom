@@ -1,0 +1,82 @@
+services:
+  task-api:
+    image: mcr.microsoft.com/dotnet/sdk:8.0
+    container_name: tasksystem-api
+    working_dir: /app/src/backend/TaskSystem.Api
+    command: >
+      sh -c "dotnet watch run --no-restore"
+    volumes:
+      - ../:/app
+      - sqlite_data:/data
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://0.0.0.0:8080
+      - ConnectionStrings__DefaultConnection=Data Source=/data/TaskSystem.db
+      - DOTNET_USE_POLLING_FILE_WATCHER=true
+    healthcheck:
+      # Use dotnet to check health endpoint (available in SDK image)
+      test: ["CMD-SHELL", "dotnet --version > /dev/null && (wget -q --spider http://localhost:8080/health || curl -f http://localhost:8080/health || exit 1)"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+    depends_on:
+      - rabbitmq
+
+  worker:
+    image: mcr.microsoft.com/dotnet/sdk:8.0
+    container_name: tasksystem-worker
+    working_dir: /app/src/backend/TaskSystem.Worker
+    command: >
+      sh -c "dotnet watch run --no-restore"
+    volumes:
+      - ../:/app
+      - sqlite_data:/data
+    environment:
+      - ConnectionStrings__DefaultConnection=Data Source=/data/TaskSystem.db
+      - RabbitMq__Host=rabbitmq
+      - RabbitMq__Username=guest
+      - RabbitMq__Password=guest
+      - DOTNET_USE_POLLING_FILE_WATCHER=true
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      task-api:
+        condition: service_healthy
+
+
+
+  frontend:
+    image: node:20
+    container_name: tasksystem-web
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    volumes:
+      - ../frontend/app:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      # Set DOCKER_ENV so Vite proxy uses Docker service name
+      - DOCKER_ENV=true
+    depends_on:
+      task-api:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: tasksystem-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+volumes:
+  sqlite_data:
+  rabbitmq_data:

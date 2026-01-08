@@ -1,0 +1,49 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.log
+.vs/
+*.vsidx
+*.vspscc
+*.scc
+
+## Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+dist-ssr/
+*.local
+
+## IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Docker
+*.env.local
+.docker/
+
+## Database
+*.db
+*.db-shm
+*.db-wal
+
+## Logs
+logs/
+*.log
+
