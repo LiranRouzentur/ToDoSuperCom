@@ -55,9 +55,21 @@ public class TaskServiceTests : IDisposable
             {
                 FullName = "John Doe",
                 Email = "john@example.com",
-                Telephone = "+972501234567"
+            Telephone = "+972501234567"
             }
         };
+
+        // Seed the user in the context so the service can load it via navigation property
+        var userEntity = new User
+        {
+            Id = owner.Id,
+            FullName = owner.FullName,
+            Email = owner.Email,
+            Telephone = owner.Telephone,
+            CreatedAtUtc = owner.CreatedAtUtc
+        };
+        _context.Users.Add(userEntity);
+        await _context.SaveChangesAsync();
 
         // Act
         var result = await _service.CreateTaskAsync(request);

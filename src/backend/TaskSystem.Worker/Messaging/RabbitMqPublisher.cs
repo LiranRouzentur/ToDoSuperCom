@@ -14,8 +14,8 @@ public class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
 
     public RabbitMqPublisher(IConnection connection, ILogger<RabbitMqPublisher> logger)
     {
-        _connection = connection;
-        _logger = logger;
+        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _channel = _connection.CreateModel();
     }
 

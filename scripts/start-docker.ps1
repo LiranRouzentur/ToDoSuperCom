@@ -120,10 +120,17 @@ if (-not $allPrereqsMet) {
 Write-Host "Native Watchers: dotnet watch + Vite HMR" -ForegroundColor Green
 Write-Host "Structure: /src/backend + /frontend/app + /infra`n" -ForegroundColor Green
 
+# Check for loose "Clean" argument (common typo handling: "- Clean" or just "Clean")
+if ($args -contains "Clean" -or $args -contains "-") {
+    $Clean = $true
+    Write-Host "[INFO] Detected loose 'Clean' argument, enabling cleanup mode." -ForegroundColor Gray
+}
+
 if ($Clean) {
     Write-Host "[CLEAN] Cleaning up old containers and volumes..." -ForegroundColor Yellow
     Push-Location $RootDir
-    docker compose -f $ComposeFile down -v --remove-orphans
+    # Ensure full teardown
+    docker compose -f $ComposeFile down -v --remove-orphans --rmi local
     $cleanResult = $LASTEXITCODE
     Pop-Location
     

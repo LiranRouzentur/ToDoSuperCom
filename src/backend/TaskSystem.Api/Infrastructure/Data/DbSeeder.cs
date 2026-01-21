@@ -11,8 +11,16 @@ public static class DbSeeder
         // Check if we should seed (e.g. if we already have users we might still want to re-seed if that's the requirement)
         // User said: "I dont mind us having hard coded data that would reapper each time we would do the builed"
         // To ensure consistency, we'll clear existing data.
-        await context.Tasks.ExecuteDeleteAsync();
-        await context.Users.ExecuteDeleteAsync();
+        if (context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+        {
+            context.Tasks.RemoveRange(context.Tasks);
+            context.Users.RemoveRange(context.Users);
+        }
+        else
+        {
+            await context.Tasks.ExecuteDeleteAsync();
+            await context.Users.ExecuteDeleteAsync();
+        }
 
         var currentUser = new User
         {

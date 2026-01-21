@@ -9,10 +9,16 @@ namespace TaskSystem.Api.IntegrationTests.Endpoints;
 public class UsersEndpointsTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly System.Text.Json.JsonSerializerOptions _jsonOptions;
 
     public UsersEndpointsTests(CustomWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
+         _jsonOptions = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        };
     }
 
     [Fact]
@@ -27,11 +33,11 @@ public class UsersEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/v1/users", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/users", request, _jsonOptions);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var user = await response.Content.ReadFromJsonAsync<UserResponse>();
+        var user = await response.Content.ReadFromJsonAsync<UserResponse>(_jsonOptions);
         user.Should().NotBeNull();
         user!.FullName.Should().Be("Integration Test User");
         user.Email.Should().Be("integration@example.com");
@@ -47,14 +53,14 @@ public class UsersEndpointsTests : IClassFixture<CustomWebApplicationFactory>
             Email = "search@example.com",
             Telephone = "+972501234567"
         };
-        await _client.PostAsJsonAsync("/api/v1/users", createRequest);
+        await _client.PostAsJsonAsync("/api/v1/users", createRequest, _jsonOptions);
 
         // Act
         var response = await _client.GetAsync("/api/v1/users?search=Search");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<PagedResponse<UserResponse>>();
+        var result = await response.Content.ReadFromJsonAsync<PagedResponse<UserResponse>>(_jsonOptions);
         result.Should().NotBeNull();
         result!.Items.Should().Contain(u => u.FullName.Contains("Search"));
     }
@@ -69,15 +75,15 @@ public class UsersEndpointsTests : IClassFixture<CustomWebApplicationFactory>
             Email = "getuser@example.com",
             Telephone = "+972501234567"
         };
-        var createResponse = await _client.PostAsJsonAsync("/api/v1/users", createRequest);
-        var createdUser = await createResponse.Content.ReadFromJsonAsync<UserResponse>();
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/users", createRequest, _jsonOptions);
+        var createdUser = await createResponse.Content.ReadFromJsonAsync<UserResponse>(_jsonOptions);
 
         // Act
         var response = await _client.GetAsync($"/api/v1/users/{createdUser!.Id}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var user = await response.Content.ReadFromJsonAsync<UserResponse>();
+        var user = await response.Content.ReadFromJsonAsync<UserResponse>(_jsonOptions);
         user.Should().NotBeNull();
         user!.Id.Should().Be(createdUser.Id);
     }

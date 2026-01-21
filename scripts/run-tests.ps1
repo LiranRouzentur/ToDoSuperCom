@@ -3,22 +3,13 @@
 .SYNOPSIS
     Run backend or frontend tests
 .DESCRIPTION
-    Unified test runner with flags to run either backend or frontend tests.
-    Cannot run both simultaneously.
-    
-    IMPORTANT:
-    - Backend tests: Unit tests run without Docker. Integration tests may need Docker.
-    - Frontend tests: REQUIRE Docker to be running (API + services must be available)
-    
+    Unified test runner.
 .PARAMETER Backend
-    Run backend tests (dotnet test)
+    Run backend tests
 .PARAMETER Frontend
-    Run frontend e2e tests (Playwright) - REQUIRES Docker running
+    Run frontend e2e tests
 .PARAMETER SkipDockerCheck
-    Skip Docker availability check (use with caution)
-.EXAMPLE
-    .\run-tests.ps1 -Backend
-    .\run-tests.ps1 -Frontend
+    Skip Docker availability check
 #>
 
 param(
@@ -30,33 +21,69 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Split-Path -Parent $ScriptDir
+$ArtifactsDir = Join-Path $RootDir "artifacts"
+if (-not (Test-Path $ArtifactsDir)) { New-Item -ItemType Directory -Path $ArtifactsDir -Force | Out-Null }
+
+# Test Results Collection
+$TestResults = [System.Collections.Generic.List[PSObject]]::new()
+
+function Add-TestResult {
+    param(
+        [string]$Name,
+        [string]$Status, # "Success" or "Failed"
+        [string]$Category, # "Backend" or "Frontend" or "Infra"
+        [string]$ErrorMessage = $null
+    )
+    
+    $script:TestResults.Add([PSCustomObject]@{
+        Name = $Name
+        Status = $Status
+        Category = $Category
+        ErrorMessage = $ErrorMessage
+    })
+}
+
+function Format-TestName {
+    param([string]$RawName)
+
+    # 1. Extract the last part (Method name) if it looks like a namespace
+    if ($RawName -match '([^\.]+)$') {
+        $RawName = $matches[1]
+    }
+    
+    # 2. Replace underscore with space
+    $Friendly = $RawName -replace "_", " "
+    
+    return $Friendly
+}
 
 # Validate: Only one flag at a time
 if ($Backend -and $Frontend) {
-    Write-Host "`n[ERROR] Cannot run both Backend and Frontend tests simultaneously." -ForegroundColor Red
-    Write-Host "Please specify only one flag: -Backend OR -Frontend`n" -ForegroundColor Yellow
+    Write-Host "[ERROR] Cannot run both Backend and Frontend tests simultaneously." -ForegroundColor Red
     exit 1
 }
 
 if (-not $Backend -and -not $Frontend) {
-    Write-Host "`n[ERROR] No test target specified." -ForegroundColor Red
-    Write-Host "Usage:" -ForegroundColor Yellow
-    Write-Host "  .\run-tests.ps1 -Backend    # Run backend tests" -ForegroundColor Cyan
-    Write-Host "  .\run-tests.ps1 -Frontend   # Run frontend e2e tests (requires Docker)`n" -ForegroundColor Cyan
+    Write-Host "[ERROR] No test target specified." -ForegroundColor Red
     exit 1
 }
 
-# Function to check if Docker is running
 function Test-DockerRunning {
     try {
         $null = docker ps 2>&1
-        return $LASTEXITCODE -eq 0
+        if ($LASTEXITCODE -eq 0) {
+            Add-TestResult -Name "Is Docker live" -Status "Success" -Category "Infra"
+            return $true
+        } else {
+            Add-TestResult -Name "Is Docker live" -Status "Failed" -Category "Infra"
+            return $false
+        }
     } catch {
+        Add-TestResult -Name "Is Docker live" -Status "Failed" -Category "Infra"
         return $false
     }
 }
 
-# Function to check if API is responding
 function Test-ApiAvailable {
     param([string]$Url = "http://localhost:5000/health")
     
@@ -68,112 +95,204 @@ function Test-ApiAvailable {
     }
 }
 
-# Run Backend Tests
-if ($Backend) {
-    Write-Host "`n=== Running Backend Tests ===`n" -ForegroundColor Cyan
-    
-    $SolutionPath = Join-Path (Join-Path $RootDir "src") "backend\TaskSystem.sln"
-    
-    Write-Host "[BUILD] Building solution..." -ForegroundColor Yellow
-    dotnet build $SolutionPath
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "`n[ERROR] Build failed" -ForegroundColor Red
-        exit 1
-    }
-    
-    Write-Host "`n[TEST] Running all backend tests...`n" -ForegroundColor Yellow
-    Write-Host "[INFO] Unit tests will run without Docker." -ForegroundColor Cyan
-    Write-Host "[INFO] Integration tests may require Docker to be running.`n" -ForegroundColor Cyan
-    
-    dotnet test $SolutionPath --no-build --logger "console;verbosity=normal"
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "`n[ERROR] Backend tests failed" -ForegroundColor Red
-        Write-Host "[TIP] If integration tests failed, ensure Docker is running: .\start-docker.ps1`n" -ForegroundColor Yellow
-        exit 1
-    }
-    
-    Write-Host "`n[SUCCESS] All backend tests passed!`n" -ForegroundColor Green
-}
-
-# Run Frontend Tests
-if ($Frontend) {
-    Write-Host "`n=== Running Frontend E2E Tests ===`n" -ForegroundColor Cyan
-    
-    # Check Docker is running (unless skipped)
-    if (-not $SkipDockerCheck) {
-        Write-Host "[CHECK] Verifying Docker is running..." -ForegroundColor Yellow
+try {
+    # Run Backend Tests
+    if ($Backend) {
+        Write-Host "=== Running Backend Tests ===" -ForegroundColor Cyan
         
-        if (-not (Test-DockerRunning)) {
-            Write-Host "`n[ERROR] Docker is not running!" -ForegroundColor Red
-            Write-Host "[ACTION] Please start Docker first:" -ForegroundColor Yellow
-            Write-Host "  cd scripts" -ForegroundColor Cyan
-            Write-Host "  .\start-docker.ps1`n" -ForegroundColor Cyan
+        $SolutionPath = Join-Path (Join-Path $RootDir "src") "backend\TaskSystem.sln"
+        
+        # Clean previous TRX files to ensure we only parse current run results
+        Get-ChildItem -Path $ArtifactsDir -Filter "*.trx" | Remove-Item -Force
+        
+        Write-Host "[BUILD] Building solution..." -ForegroundColor Yellow
+        dotnet build $SolutionPath
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] Build failed" -ForegroundColor Red
+            Add-TestResult -Name "Build Backend Solution" -Status "Failed" -Category "Backend"
             exit 1
+        } else {
+            Add-TestResult -Name "Build Backend Solution" -Status "Success" -Category "Backend"
         }
         
-        Write-Host "[✓] Docker is running" -ForegroundColor Green
+        Write-Host "[TEST] Running all backend tests..." -ForegroundColor Yellow
         
-        # Check if API is available
-        Write-Host "[CHECK] Verifying API is available..." -ForegroundColor Yellow
+        # Run tests with TRX logger, logging to the directory. dotnet will create unique filenames for each project.
+        dotnet test $SolutionPath --no-build --logger "trx" --results-directory "$ArtifactsDir" --logger "console;verbosity=normal"
         
-        $maxRetries = 3
-        $retryCount = 0
-        $apiAvailable = $false
+        $executionResult = $LASTEXITCODE
         
-        while ($retryCount -lt $maxRetries -and -not $apiAvailable) {
-            $apiAvailable = Test-ApiAvailable
-            if (-not $apiAvailable) {
-                $retryCount++
-                if ($retryCount -lt $maxRetries) {
-                    Write-Host "[WAIT] API not ready, retrying ($retryCount/$maxRetries)..." -ForegroundColor Yellow
-                    Start-Sleep -Seconds 2
+        # Parse ALL TRX files in the directory
+        $trxFiles = Get-ChildItem -Path $ArtifactsDir -Filter "*.trx"
+        
+        if ($trxFiles) {
+            foreach ($trxFile in $trxFiles) {
+                # Use -LiteralPath to avoid issues with brackets in filenames (e.g. test_results[1].trx)
+                [xml]$trx = Get-Content -LiteralPath $trxFile.FullName -Raw
+                $ns = @{ns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+                
+                # Select all UnitTestResults
+                $results = Select-Xml -Xml $trx -XPath "//ns:UnitTestResult" -Namespace $ns
+                
+                foreach ($res in $results) {
+                    $testName = $res.Node.testName
+                    $outcome = $res.Node.outcome
+                    $status = if ($outcome -eq "Passed") { "Success" } else { "Failed" }
+                    
+                    $errorMsg = $null
+                    if ($status -eq "Failed") {
+                        # Try to extract error message
+                        $errorMsg = $res.Node.Output.ErrorInfo.Message
+                    }
+                    
+                    Add-TestResult -Name $testName -Status $status -Category "Backend" -ErrorMessage $errorMsg
                 }
             }
         }
         
-        if (-not $apiAvailable) {
-            Write-Host "`n[WARNING] API health check failed!" -ForegroundColor Yellow
-            Write-Host "[INFO] Containers may still be starting up." -ForegroundColor Cyan
-            Write-Host "[TIP] If tests fail, wait a moment and try again, or run: .\start-docker.ps1`n" -ForegroundColor Cyan
+        if ($executionResult -ne 0) {
+            Write-Host "[ERROR] Backend tests failed" -ForegroundColor Red
         } else {
-            Write-Host "[✓] API is responding" -ForegroundColor Green
+            Write-Host "[SUCCESS] All backend tests passed!" -ForegroundColor Green
         }
     }
-    
-    $FrontendPath = Join-Path (Join-Path $RootDir "frontend") "app"
-    
-    # Check if node_modules exists
-    if (-not (Test-Path (Join-Path $FrontendPath "node_modules"))) {
-        Write-Host "`n[SETUP] Installing dependencies..." -ForegroundColor Yellow
+
+    # Run Frontend Tests
+    if ($Frontend) {
+        Write-Host "=== Running Frontend E2E Tests ===" -ForegroundColor Cyan
+        
+        if (-not $SkipDockerCheck) {
+            Write-Host "[CHECK] Verifying Docker is running..." -ForegroundColor Yellow
+            
+            if (-not (Test-DockerRunning)) {
+                Write-Host "[ERROR] Docker is not running!" -ForegroundColor Red
+                exit 1
+            }
+            
+            Write-Host "[OK] Docker is running" -ForegroundColor Green
+            
+            Write-Host "[CHECK] Verifying API is available..." -ForegroundColor Yellow
+            
+            $maxRetries = 3
+            $retryCount = 0
+            $apiAvailable = $false
+            
+            while ($retryCount -lt $maxRetries -and -not $apiAvailable) {
+                $apiAvailable = Test-ApiAvailable
+                if (-not $apiAvailable) {
+                    $retryCount++
+                    if ($retryCount -lt $maxRetries) {
+                        Write-Host "[WAIT] Retrying API check..." -ForegroundColor Yellow
+                        Start-Sleep -Seconds 2
+                    }
+                }
+            }
+            
+            if (-not $apiAvailable) {
+                Write-Host "[WARNING] API health check failed!" -ForegroundColor Yellow
+                Add-TestResult -Name "API Health Check" -Status "Failed" -Category "Infra"
+            } else {
+                Write-Host "[OK] API is responding" -ForegroundColor Green
+                Add-TestResult -Name "API Health Check" -Status "Success" -Category "Infra"
+            }
+        }
+        
+        $FrontendPath = Join-Path (Join-Path $RootDir "frontend") "app"
+        $JsonPath = Join-Path $ArtifactsDir "frontend_tests.json"
+        
+        if (-not (Test-Path (Join-Path $FrontendPath "node_modules"))) {
+            Write-Host "[SETUP] Installing dependencies..." -ForegroundColor Yellow
+            Push-Location $FrontendPath
+            npm install
+            Pop-Location
+            
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[ERROR] npm install failed" -ForegroundColor Red
+                Add-TestResult -Name "Install Frontend Dependencies" -Status "Failed" -Category "Frontend" -ErrorMessage "npm install returned exit code $LASTEXITCODE"
+                exit 1
+            } else {
+                Add-TestResult -Name "Install Frontend Dependencies" -Status "Success" -Category "Frontend"
+            }
+        }
+        
+        Write-Host "[CHECK] Verifying Playwright installation..." -ForegroundColor Yellow
         Push-Location $FrontendPath
-        npm install
+        
+        npx playwright install --with-deps
+        
+        Write-Host "[TEST] Running Playwright tests..." -ForegroundColor Yellow
+        
+        $env:PLAYWRIGHT_JSON_OUTPUT_NAME = $JsonPath
+        
+        # We use 'list' for console output and 'json' for file output.
+        $procs = Start-Process -FilePath "cmd" -ArgumentList "/c npx playwright test --reporter=list,json" -Wait -NoNewWindow -PassThru
+        
+        $testResult = $procs.ExitCode
         Pop-Location
         
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "`n[ERROR] npm install failed" -ForegroundColor Red
-            exit 1
+        # Parse JSON results
+        if (Test-Path $JsonPath) {
+            try {
+                $jsonContent = Get-Content $JsonPath -Raw | ConvertFrom-Json
+                foreach ($suite in $jsonContent.suites) {
+                    foreach ($spec in $suite.specs) {
+                        $testName = $spec.title
+                        $status = "Failed"
+                        $errorMsg = $null
+                        
+                        if ($spec.ok) { 
+                            $status = "Success" 
+                        } else {
+                             # Try to capture first error
+                             if ($spec.tests[0].results[0].error.message) {
+                                $errorMsg = $spec.tests[0].results[0].error.message
+                             }
+                        }
+                        
+                        Add-TestResult -Name $testName -Status $status -Category "Frontend" -ErrorMessage $errorMsg
+                    }
+                }
+            } catch {
+                Write-Host "[WARNING] Failed to parse frontend test results: $_" -ForegroundColor Yellow
+            }
+        }
+
+        if ($testResult -ne 0) {
+            Write-Host "[ERROR] Frontend tests failed" -ForegroundColor Red
+        } else {
+            Write-Host "[SUCCESS] All frontend tests passed!" -ForegroundColor Green
+        }
+    }
+}
+finally {
+    Write-Host "`n============================================================" -ForegroundColor Magenta
+    Write-Host "                   TEST RUN SUMMARY" -ForegroundColor Magenta
+    Write-Host "============================================================" -ForegroundColor Magenta
+    
+    $totalPassed = 0
+    $totalFailed = 0
+    
+    foreach ($result in $TestResults) {
+        $color = if ($result.Status -eq "Success") { 
+            $totalPassed++
+            "Green" 
+        } else { 
+            $totalFailed++
+            "Red" 
+        }
+        
+        $friendlyName = Format-TestName -RawName $result.Name
+        
+        Write-Host "Test: $friendlyName - $($result.Status)" -ForegroundColor $color
+        
+        if ($result.Status -eq "Failed" -and $result.ErrorMessage) {
+            Write-Host "      Error: $($result.ErrorMessage)" -ForegroundColor DarkRed
         }
     }
     
-    # Check if Playwright browsers are installed
-    Write-Host "`n[CHECK] Verifying Playwright installation..." -ForegroundColor Yellow
-    Push-Location $FrontendPath
-    
-    # Try to install Playwright browsers if needed
-    npx playwright install --with-deps 2>$null
-    
-    Write-Host "`n[TEST] Running Playwright tests...`n" -ForegroundColor Yellow
-    npm run test:e2e
-    
-    $testResult = $LASTEXITCODE
-    Pop-Location
-    
-    if ($testResult -ne 0) {
-        Write-Host "`n[ERROR] Frontend tests failed" -ForegroundColor Red
-        exit 1
-    }
-    
-    Write-Host "`n[SUCCESS] All frontend tests passed!`n" -ForegroundColor Green
+    Write-Host "------------------------------------------------------------" -ForegroundColor Magenta
+    Write-Host "Total: $($TestResults.Count) | Passed: $totalPassed | Failed: $totalFailed" -ForegroundColor Magenta
+    Write-Host "============================================================" -ForegroundColor Magenta
 }
+

@@ -26,12 +26,16 @@ public class DueScanWorkerTests
     public async Task ExecuteAsync_WithValidConfiguration_StartsSuccessfully()
     {
         // Arrange
-        var connectionString = "Data Source=:memory:";
-        _mockConfiguration.Setup(c => c.GetConnectionString("DefaultConnection")).Returns(connectionString);
-        _mockConfiguration.Setup(c => c.GetValue<int>("DueScan:IntervalSeconds", It.IsAny<int>())).Returns(5);
-        _mockConfiguration.Setup(c => c.GetValue<int>("DueScan:BatchSize", It.IsAny<int>())).Returns(10);
+        var inMemorySettings = new Dictionary<string, string> {
+            {"ConnectionStrings:DefaultConnection", "Data Source=:memory:"},
+            {"DueScan:IntervalSeconds", "5"},
+            {"DueScan:BatchSize", "10"}
+        };
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(inMemorySettings!)
+            .Build();
 
-        var worker = new DueScanWorker(_mockConfiguration.Object, _mockPublisher.Object, _mockLogger.Object);
+        var worker = new DueScanWorker(config, _mockPublisher.Object, _mockLogger.Object);
         var cts = new CancellationTokenSource();
 
         // Act
@@ -55,12 +59,16 @@ public class DueScanWorkerTests
     public async Task ExecuteAsync_WithLowIntervalSeconds_UsesMinimumValue()
     {
         // Arrange
-        var connectionString = "Data Source=:memory:";
-        _mockConfiguration.Setup(c => c.GetConnectionString("DefaultConnection")).Returns(connectionString);
-        _mockConfiguration.Setup(c => c.GetValue<int>("DueScan:IntervalSeconds", It.IsAny<int>())).Returns(1); // Below minimum
-        _mockConfiguration.Setup(c => c.GetValue<int>("DueScan:BatchSize", It.IsAny<int>())).Returns(10);
+        var inMemorySettings = new Dictionary<string, string> {
+            {"ConnectionStrings:DefaultConnection", "Data Source=:memory:"},
+            {"DueScan:IntervalSeconds", "1"}, // Below minimum
+            {"DueScan:BatchSize", "10"}
+        };
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(inMemorySettings!)
+            .Build();
 
-        var worker = new DueScanWorker(_mockConfiguration.Object, _mockPublisher.Object, _mockLogger.Object);
+        var worker = new DueScanWorker(config, _mockPublisher.Object, _mockLogger.Object);
         var cts = new CancellationTokenSource();
 
         // Act
@@ -84,12 +92,16 @@ public class DueScanWorkerTests
     public async Task ExecuteAsync_WithHighBatchSize_UsesMaximumValue()
     {
         // Arrange
-        var connectionString = "Data Source=:memory:";
-        _mockConfiguration.Setup(c => c.GetConnectionString("DefaultConnection")).Returns(connectionString);
-        _mockConfiguration.Setup(c => c.GetValue<int>("DueScan:IntervalSeconds", It.IsAny<int>())).Returns(5);
-        _mockConfiguration.Setup(c => c.GetValue<int>("DueScan:BatchSize", It.IsAny<int>())).Returns(200); // Above maximum
+        var inMemorySettings = new Dictionary<string, string> {
+            {"ConnectionStrings:DefaultConnection", "Data Source=:memory:"},
+            {"DueScan:IntervalSeconds", "5"},
+            {"DueScan:BatchSize", "2000"} // Above maximum
+        };
+        IConfiguration config = new ConfigurationBuilder()
+            .AddInMemoryCollection(inMemorySettings!)
+            .Build();
 
-        var worker = new DueScanWorker(_mockConfiguration.Object, _mockPublisher.Object, _mockLogger.Object);
+        var worker = new DueScanWorker(config, _mockPublisher.Object, _mockLogger.Object);
         var cts = new CancellationTokenSource();
 
         // Act

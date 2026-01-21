@@ -16,9 +16,9 @@ public class DueScanWorker : BackgroundService
         IRabbitMqPublisher publisher,
         ILogger<DueScanWorker> logger)
     {
-        _configuration = configuration;
-        _publisher = publisher;
-        _logger = logger;
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

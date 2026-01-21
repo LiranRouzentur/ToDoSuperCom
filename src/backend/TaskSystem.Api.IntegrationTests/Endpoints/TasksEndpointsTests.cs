@@ -11,10 +11,16 @@ namespace TaskSystem.Api.IntegrationTests.Endpoints;
 public class TasksEndpointsTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly HttpClient _client;
+    private readonly System.Text.Json.JsonSerializerOptions _jsonOptions;
 
     public TasksEndpointsTests(CustomWebApplicationFactory factory)
     {
         _client = factory.CreateClient();
+        _jsonOptions = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        };
     }
 
     [Fact]
@@ -36,11 +42,11 @@ public class TasksEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/v1/tasks", request);
+        var response = await _client.PostAsJsonAsync("/api/v1/tasks", request, _jsonOptions);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        var task = await response.Content.ReadFromJsonAsync<TaskResponse>();
+        var task = await response.Content.ReadFromJsonAsync<TaskResponse>(_jsonOptions);
         task.Should().NotBeNull();
         task!.Title.Should().Be("Integration Test Task");
     }
@@ -62,15 +68,15 @@ public class TasksEndpointsTests : IClassFixture<CustomWebApplicationFactory>
                 Telephone = "+972501234567"
             }
         };
-        var createResponse = await _client.PostAsJsonAsync("/api/v1/tasks", createRequest);
-        var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskResponse>();
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/tasks", createRequest, _jsonOptions);
+        var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskResponse>(_jsonOptions);
 
         // Act
         var response = await _client.GetAsync($"/api/v1/tasks?status=Open&priority=High");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var result = await response.Content.ReadFromJsonAsync<PagedResponse<TaskResponse>>();
+        var result = await response.Content.ReadFromJsonAsync<PagedResponse<TaskResponse>>(_jsonOptions);
         result.Should().NotBeNull();
         result!.Items.Should().Contain(t => t.Id == createdTask!.Id);
     }
@@ -92,15 +98,15 @@ public class TasksEndpointsTests : IClassFixture<CustomWebApplicationFactory>
                 Telephone = "+972501234567"
             }
         };
-        var createResponse = await _client.PostAsJsonAsync("/api/v1/tasks", createRequest);
-        var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskResponse>();
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/tasks", createRequest, _jsonOptions);
+        var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskResponse>(_jsonOptions);
 
         // Act
         var response = await _client.GetAsync($"/api/v1/tasks/{createdTask!.Id}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var task = await response.Content.ReadFromJsonAsync<TaskResponse>();
+        var task = await response.Content.ReadFromJsonAsync<TaskResponse>(_jsonOptions);
         task.Should().NotBeNull();
         task!.Id.Should().Be(createdTask.Id);
     }
@@ -135,8 +141,8 @@ public class TasksEndpointsTests : IClassFixture<CustomWebApplicationFactory>
                 Telephone = "+972501234567"
             }
         };
-        var createResponse = await _client.PostAsJsonAsync("/api/v1/tasks", createRequest);
-        var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskResponse>();
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/tasks", createRequest, _jsonOptions);
+        var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskResponse>(_jsonOptions);
 
         var updateRequest = new TaskUpdateRequest
         {
@@ -148,7 +154,7 @@ public class TasksEndpointsTests : IClassFixture<CustomWebApplicationFactory>
         };
 
         // Act - Don't include If-Match header
-        var response = await _client.PutAsJsonAsync($"/api/v1/tasks/{createdTask!.Id}", updateRequest);
+        var response = await _client.PutAsJsonAsync($"/api/v1/tasks/{createdTask!.Id}", updateRequest, _jsonOptions);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -171,8 +177,8 @@ public class TasksEndpointsTests : IClassFixture<CustomWebApplicationFactory>
                 Telephone = "+972501234567"
             }
         };
-        var createResponse = await _client.PostAsJsonAsync("/api/v1/tasks", createRequest);
-        var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskResponse>();
+        var createResponse = await _client.PostAsJsonAsync("/api/v1/tasks", createRequest, _jsonOptions);
+        var createdTask = await createResponse.Content.ReadFromJsonAsync<TaskResponse>(_jsonOptions);
 
         // Act
         var response = await _client.DeleteAsync($"/api/v1/tasks/{createdTask!.Id}");

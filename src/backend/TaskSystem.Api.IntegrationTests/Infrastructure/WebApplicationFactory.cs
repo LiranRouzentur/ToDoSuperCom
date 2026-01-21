@@ -21,9 +21,11 @@ public class CustomWebApplicationFactory : WebApplicationFactory<global::Program
             }
 
             // Add InMemory database for testing
+            // Use a fixed name per factory instance so that contexts share the DB
+            var dbName = "TestDb_" + Guid.NewGuid().ToString();
             services.AddDbContext<TaskDbContext>(options =>
             {
-                options.UseInMemoryDatabase("TestDb_" + Guid.NewGuid().ToString());
+                options.UseInMemoryDatabase(dbName);
             });
 
             // Build the service provider
